@@ -1,5 +1,5 @@
 import {
-    _decorator, Canvas, Color, Component, EventHandler, Node, Sprite, SpriteFrame, Texture2D,
+    _decorator, Camera, Canvas, Color, Component, EventHandler, Node, Sprite, SpriteFrame, Texture2D,
     Tween, tween, UIOpacity, UITransform, Vec3, view,
 } from 'cc';
 
@@ -15,6 +15,8 @@ const { ccclass, property } = _decorator;
  *
  * Self-contained (imports only 'cc'): copy this file into another project,
  * put it on a node at the top of the UI canvas and assign the logos.
+ * Works with a Canvas or, without one, with a RenderRoot2D UI drawn by an
+ * orthographic camera (the screen rect is then that camera's view).
  * The target is read every frame, so a resize / rotation mid-flight still
  * lands on the right logo.
  */
@@ -364,7 +366,7 @@ export class IntroLogo extends Component {
         return null;
     }
 
-    /** The visible screen in world space (the canvas rect). */
+    /** The visible screen in world space (the canvas rect, or the view of the camera that renders the UI). */
     private GetScreenRect(from: Node): { x: number; y: number; width: number; height: number } {
         const canvas = this.FindCanvas(from) ?? this.FindCanvas(this.node);
         const transform = canvas?.getComponent(UITransform);
@@ -372,8 +374,27 @@ export class IntroLogo extends Component {
             const box = transform.getBoundingBoxToWorld();
             return { x: box.x, y: box.y, width: box.width, height: box.height };
         }
+        // No Canvas (UI under a RenderRoot2D drawn by an orthographic camera, e.g. UI + UICam):
+        // the screen is that camera's view rectangle in world space.
+        const camera = this.FindCamera(from.layer);
         const size = view.getVisibleSize();
+        if (camera && camera.projection === Camera.ProjectionType.ORTHO) {
+            const h = camera.orthoHeight;
+            const w = h * (size.width / Math.max(1, size.height));
+            const p = camera.node.worldPosition;
+            return { x: p.x - w, y: p.y - h, width: w * 2, height: h * 2 };
+        }
         return { x: 0, y: 0, width: size.width, height: size.height };
+    }
+
+    /** The camera that renders the given layer (highest priority wins, like the one drawn on top). */
+    private FindCamera(layer: number): Camera | null {
+        let best: Camera | null = null;
+        for (const camera of this.node.scene?.getComponentsInChildren(Camera) ?? []) {
+            if (!camera.enabledInHierarchy || !(camera.visibility & layer)) continue;
+            if (!best || camera.priority > best.priority) best = camera;
+        }
+        return best;
     }
 
     private StopTweens(): void {
