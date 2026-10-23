@@ -12,6 +12,8 @@
  *   các cục chen nhau mềm mại (vị trí ngang trượt dần, góc lắc lư). Xe nhận hút từng cục ở đầu đống (`intakeInterval`),
  *   cục chạy thành chuỗi ngược lại: nảy lên cửa sau → dọc thùng → vào ô lưới (xếp từ phía đầu xe ra).
  *   Đủ một hàng cục thì hàng đó liền lại thành khối (`slotPartial`), đủ cả khối thì khối hiện liền (`land(..., true)`).
+ * - Mỗi cục có tốc độ ban đầu riêng (`paceVariance`) và độ gắt lúc khởi động khác nhau (lên băng rồi thì dần về bằng tốc độ băng); trên băng cục xoay theo quãng đường lăn
+ *   (`rollPerPixel`), đứng yên trong đống thì chỉ còn lắc nhẹ.
  * - Chưa xe nào nhận được thì gói cứ chạy vòng và tìm lại liên tục; xe vừa dỡ xong (rỗng) cũng nhận lại được.
  * - Đăng ký nghe `'unload'` nên luồng chuyển hàng trực tiếp tạm thời trong CarController tự tắt.
  */
@@ -63,10 +65,16 @@ interface Cube {
     cum: number[];
     dist: number;
     t: number;
-    // Góc: tốc độ lộn vòng khi chạy, góc nghỉ trên băng, pha lắc lư
+    // Góc: tốc độ lộn vòng khi chạy giữa xe và băng, độ xoay theo quãng đường lăn trên băng, góc gốc, pha lắc lư
     spin: number;
-    rest: number;
+    roll: number;
+    base: number;
     wobble: number;
+    // Hệ số tốc độ riêng của cục (mỗi cục chạy nhanh chậm khác nhau một chút) và độ gắt lúc tăng tốc
+    pace: number;
+    accel: number;
+    // Thời gian đã ở trên băng (độ chênh tốc độ chỉ có lúc mới rơi xuống, sau đó dần về bằng tốc độ băng)
+    beltTime: number;
     row: number;
     scale: number;
 }
@@ -109,8 +117,12 @@ export class Conveyor extends Component {
     travelSpeed: number = 1300;
     @property({ group: { name: 'Nhịp Ra Vào', id: 'timing', displayOrder: 2 }, tooltip: 'Độ cao cú nảy (kiểu DOJump) ở đoạn giữa cửa sau thùng xe và băng' })
     hopPower: number = 45;
-    @property({ group: { name: 'Nhịp Ra Vào', id: 'timing', displayOrder: 2 }, tooltip: 'Tốc độ lộn vòng tối đa (độ/giây) khi cục đang chạy' })
+    @property({ group: { name: 'Nhịp Ra Vào', id: 'timing', displayOrder: 2 }, tooltip: 'Tốc độ lộn vòng tối đa (độ/giây) khi cục đang chạy giữa xe và băng' })
     spinSpeed: number = 420;
+    @property({ group: { name: 'Nhịp Ra Vào', id: 'timing', displayOrder: 2 }, tooltip: 'Cục xoay bao nhiêu độ cho mỗi pixel lăn trên băng (đứng yên trong đống thì thôi xoay)' })
+    rollPerPixel: number = 0.35;
+    @property({ group: { name: 'Nhịp Ra Vào', id: 'timing', displayOrder: 2 }, range: [0, 0.6, 0.05], slide: true, tooltip: 'Độ chênh tốc độ giữa các cục (0.3 = mỗi cục nhanh / chậm hơn tới 30%), để dòng cục không đều như máy' })
+    paceVariance: number = 0.3;
 
     // Vị trí cổng (quãng đường s trên băng) của từng xe
     ports: Map<CarController, number> = new Map();
@@ -254,8 +266,12 @@ export class Conveyor extends Component {
             s: 0, remain: -1, side: 0, jitter: (Math.random() * 2 - 1) * this.jitter,
             path: [], cum: [], dist: 0, t: 0,
             spin: (Math.random() < 0.5 ? -1 : 1) * this.spinSpeed * (0.5 + Math.random() * 0.5),
-            rest: (Math.random() * 2 - 1) * 18,
+            roll: (Math.random() < 0.5 ? -1 : 1) * this.rollPerPixel * (0.6 + Math.random() * 0.8),
+            base: 0,
             wobble: Math.random() * Math.PI * 2,
+            pace: 1 + (Math.random() * 2 - 1) * this.paceVariance,
+            accel: 2 + Math.random() * 6,
+            beltTime: 0,
             row: 0, scale,
         };
         packet.cubes.push(cube);
@@ -318,7 +334,8 @@ export class Conveyor extends Component {
         cube.t += dt;
         let total = cube.cum[cube.cum.length - 1];
         let left = total - cube.dist;
-        let speed = this.travelSpeed * Math.min(1, 0.3 + cube.t * 5) * Math.min(1, 0.35 + left / 120);
+        // Mỗi cục khởi động với tốc độ và độ gắt khác nhau, rồi chậm lại khi gần tới nơi
+        let speed = this.travelSpeed * cube.pace * Math.min(1, 0.15 + cube.t * cube.accel) * Math.min(1, 0.35 + left / 120);
         cube.dist = Math.min(total, cube.dist + speed * dt);
         this.pathPoint(cube, cube.dist, out);
         cube.node.angle += cube.spin * dt;
@@ -364,14 +381,14 @@ export class Conveyor extends Component {
                 continue;
             }
             if (cube.phase != Phase.Belt) continue;
-            // Góc dần về góc nghỉ, lắc lư nhẹ như đang bị băng xóc
-            let target = cube.rest + Math.sin(this.now * 9 + cube.wobble) * 5;
-            cube.node.angle += (target - cube.node.angle) * ease;
+            cube.beltTime += dt;
+            let move = step * this.beltPace(cube);
             // Gói chưa có xe nhận: tìm lại mỗi khung hình (có thể có xe vừa rảnh)
             if (!packet.target) this.assign(packet, cube.s);
             if (!packet.target) {
-                cube.s = this.wrap(cube.s + step);
+                cube.s = this.wrap(cube.s + move);
                 cube.side += (cube.jitter - cube.side) * ease;
+                this.rollCube(cube, move);
                 continue;
             }
             let port = this.portOf(packet.target);
@@ -389,7 +406,9 @@ export class Conveyor extends Component {
             q.forEach((cube, i) => {
                 let row = Math.floor(i / this.pileWidth), col = i % this.pileWidth;
                 let want = row * this.pileGap;
-                cube.remain = Math.max(want, cube.remain - step);
+                let before = cube.remain;
+                cube.remain = Math.max(want, cube.remain - step * this.beltPace(cube));
+                this.rollCube(cube, Math.max(0, before - cube.remain));
                 cube.s = this.wrap(port - cube.remain);
                 let side = (col - (this.pileWidth - 1) / 2) * this.pileGap + cube.jitter;
                 cube.side += (side - cube.side) * ease;
@@ -408,9 +427,22 @@ export class Conveyor extends Component {
         }
     }
 
+    // Hệ số tốc độ trên băng: lúc mới rơi xuống mỗi cục nhanh / chậm khác nhau, sau khoảng nửa giây thì bằng tốc độ băng
+    beltPace(cube: Cube): number {
+        return 1 + (cube.pace - 1) * Math.exp(-cube.beltTime * 4);
+    }
+
+    // Cục lăn trên băng: xoay theo quãng đường vừa đi, cộng chút lắc lư như bị băng xóc (đứng yên thì chỉ còn lắc)
+    rollCube(cube: Cube, moved: number) {
+        cube.base += cube.roll * moved;
+        cube.node.angle = cube.base + Math.sin(this.now * 9 + cube.wobble) * 4;
+    }
+
     // Cục vừa rơi xuống băng: báo cho xe nguồn khi cục cuối đã ra hết
     onBelt(cube: Cube) {
         cube.phase = Phase.Belt;
+        cube.base = cube.node.angle;
+        cube.beltTime = 0;
         cube.remain = -1;
         let job = cube.job;
         if (job && --job.left == 0 && job.done) job.done();
