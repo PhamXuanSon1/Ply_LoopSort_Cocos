@@ -7,9 +7,10 @@
  *   - `onTap()`: xử lý khi xe bị chạm.
  *   - `canReceive(color)`: kiểm tra xe có nhận được khối màu này không.
  *   - `receive(color, delay)`: cho khối vào xe (giữ chỗ ngay, khối bật vào sau `delay` giây).
+ *   - `reserve(color)` + `land(index, color)`: giữ chỗ trước rồi cho khối vào sau (băng chuyền dùng khi khối còn đang bay tới).
  *   - `complete()`: xe đủ `capacity` khối cùng màu: kéo mái che, hiện tick, xe đứng yên.
  *   - `checkWin()`: kiểm tra thắng.
- * - Sự kiện `carEvents`: phát `'unload'` khi xe đổ hàng và `'complete'` khi xe đủ hàng.
+ * - Sự kiện `carEvents`: phát `'unload'` (car, units, topIndex) khi xe đổ hàng và `'complete'` khi xe đủ hàng.
  * - Chuyển hàng trực tiếp (tạm thời): khi chưa có script nào nghe `'unload'`, khối được chuyển thẳng sang xe
  *   phù hợp nhất, ưu tiên xe đã có cùng màu trước, rồi mới tới xe rỗng. Đây là cách tạm để chơi được trong lúc
  *   chưa có băng chuyền. Khi viết băng chuyền, chỉ cần `carEvents.on('unload', ...)` là luồng này tự tắt.
@@ -28,7 +29,7 @@ export enum CarState {
     Complete,
 }
 
-// 'unload' (car, colors[]) khi xe dỡ các khối trên cùng, 'complete' (car) khi xe chứa đủ hàng cùng một màu
+// 'unload' (car, colors[], topIndex) khi xe dỡ các khối trên cùng (topIndex = ô của khối ra đầu tiên), 'complete' (car) khi xe chứa đủ hàng cùng một màu
 export const carEvents = new EventTarget();
 
 @ccclass('CarController')
@@ -36,6 +37,8 @@ export class CarController extends Component {
 
     // Danh sách tất cả các xe trong scene; dùng để tìm xe nhận hàng khi chưa có băng chuyền
     static all: CarController[] = [];
+    // Số khối đang chạy trên băng chuyền (chưa vào xe nào); còn khối thì chưa tính thắng
+    static unitsOnBelt: number = 0;
 
     // Hàng hóa từ đầu xe (index 0) tới đuôi; phần tử cuối cùng là khối nằm trên cùng ra trước
     @property({ type: [Enum(ColorType)], tooltip: 'Danh sách màu hàng hóa từ đầu xe (index 0) tới đuôi; phần tử cuối nằm trên cùng sẽ dỡ ra trước' })
@@ -86,8 +89,9 @@ export class CarController extends Component {
         return this.node.activeInHierarchy && this.graphic.hitTest(screenPos);
     }
 
+    // Xe đang chờ khối trên băng chuyền tới (ô đã giữ chỗ) thì chưa cho dỡ, tránh dỡ cả khối chưa về
     canTap(): boolean {
-        return this.state == CarState.Idle && !this.isEmpty();
+        return this.state == CarState.Idle && !this.isEmpty() && this.graphic.pending.size == 0;
     }
 
     // Số lượng khối cùng màu nằm liên tiếp ở trên cùng
@@ -111,13 +115,17 @@ export class CarController extends Component {
         let units = this.colors.slice(this.colors.length - this.topRunCount());
         sm?.playSound(SoundType.Touch);
         if (carEvents.hasEventListener('unload')) {
-            // Hệ thống băng chuyền sẽ tiếp nhận các khối từ đây
+            // Hệ thống băng chuyền sẽ tiếp nhận các khối từ đây; xe không nhận hàng cho tới khi dỡ xong
             let top = this.colors.length - 1;
             this.colors.length -= units.length;
+            this.state = CarState.Unloading;
             this.movement.backUp();
             units.forEach((_, k) => this.scheduleOnce(() => this.graphic.slotOut(top - k), k * this.unloadInterval));
-            this.scheduleOnce(() => this.movement.settle(), units.length * this.unloadInterval + 0.1);
-            carEvents.emit('unload', this, units);
+            this.scheduleOnce(() => {
+                this.state = CarState.Idle;
+                this.movement.settle();
+            }, units.length * this.unloadInterval + 0.1);
+            carEvents.emit('unload', this, units, top);
             return;
         }
         this.transferDirect(units.length);
@@ -151,12 +159,18 @@ export class CarController extends Component {
 
     // Nhận một khối; delay > 0 thì ô được giữ chỗ ngay (logic đã tính khối này) nhưng khối hiện sau `delay` giây
     receive(color: ColorType, delay: number = 0) {
+        let index = this.reserve(color);
+        if (delay > 0) this.scheduleOnce(() => this.land(index, color), delay);
+        else this.land(index, color);
+    }
+
+    // Giữ chỗ một khối (logic tính khối này ngay, ô bị ẩn); trả về chỉ số ô, gọi land(index, color) khi khối tới nơi
+    reserve(color: ColorType): number {
         this.colors.push(color);
         let index = this.colors.length - 1;
         this.graphic.reserve(index);
         this.graphic.refresh(this.colors, this.capacity);
-        if (delay > 0) this.scheduleOnce(() => this.land(index, color), delay);
-        else this.land(index, color);
+        return index;
     }
 
     // Khối vào hẳn thùng xe: chỉ khối mới bật vào (thân xe đứng yên); đủ hàng cùng màu thì hoàn thành
@@ -189,6 +203,7 @@ export class CarController extends Component {
     static checkWin() {
         let cars = CarController.all;
         if (cars.length == 0) return;
+        if (CarController.unitsOnBelt > 0) return;
         if (cars.some(c => c.state == CarState.Unloading)) return;
         if (cars.every(c => c.isComplete() || c.isEmpty())) {
             ui?.onWin();
