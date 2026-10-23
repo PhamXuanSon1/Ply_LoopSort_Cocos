@@ -2,7 +2,7 @@
  * CarMovement: chuyển động của xe.
  *
  * - `shake()`: rung khi chạm vào xe không đổ hàng được.
- * - `nudge()`: nhích nhẹ về phía băng khi đổ hàng.
+ * - `backUp()`: lùi về phía băng chuyền (đuôi xe lại gần băng) và giữ nguyên trong lúc đổ hàng; `settle()` về lại chỗ cũ.
  * - `driveAway()`: chạy ra khỏi màn hình về phía đầu xe (hiện không dùng: xe hoàn thành thì đứng yên).
  */
 import { _decorator, Component, Tween, tween, v3, Vec3 } from 'cc';
@@ -14,6 +14,10 @@ export class CarMovement extends Component {
     // -1 = đầu xe hướng sang trái (đuôi quay về băng chuyền bên phải), 1 = đầu xe hướng sang phải
     @property({ tooltip: 'Hướng đầu xe: -1 là quay trái (đuôi hướng về băng chuyền bên phải), 1 là quay phải' })
     facing: number = -1;
+    @property({ tooltip: 'Khoảng cách (pixel) xe lùi về phía băng chuyền khi đổ hàng' })
+    backDistance: number = 30;
+    @property({ tooltip: 'Thời gian (giây) xe lùi về phía băng chuyền' })
+    backDuration: number = 0.15;
     @property({ tooltip: 'Khoảng cách (pixel) xe chạy ra ngoài màn hình' })
     driveDistance: number = 1600;
     @property({ tooltip: 'Thời gian (giây) xe chạy ra ngoài màn hình' })
@@ -38,14 +42,20 @@ export class CarMovement extends Component {
             .start();
     }
 
-    // Nhích nhẹ về phía băng chuyền khi đang dỡ hàng
-    nudge() {
+    // Lùi về phía băng chuyền (ngược hướng đầu xe) và đứng đó trong lúc dỡ hàng
+    backUp() {
         Tween.stopAllByTarget(this.node);
-        this.node.setPosition(this.origin);
         let o = this.origin;
         tween(this.node)
-            .to(0.08, { position: v3(o.x - this.facing * 18, o.y, o.z) }, { easing: 'quadOut' })
-            .to(0.15, { position: o }, { easing: 'quadIn' })
+            .to(this.backDuration, { position: v3(o.x - this.facing * this.backDistance, o.y, o.z) }, { easing: 'quadOut' })
+            .start();
+    }
+
+    // Dỡ hàng xong: chạy về lại vị trí ban đầu
+    settle() {
+        Tween.stopAllByTarget(this.node);
+        tween(this.node)
+            .to(0.2, { position: this.origin }, { easing: 'quadInOut' })
             .start();
     }
 
