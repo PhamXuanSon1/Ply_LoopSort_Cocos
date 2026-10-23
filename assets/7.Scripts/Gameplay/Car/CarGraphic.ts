@@ -166,6 +166,8 @@ export class CarGraphic extends Component {
         if (!this.skin) return;
         this.colors = colors;
         this.closed = false;
+        // Thùng đang mở (chưa hoàn thành) thì không có dấu tick; tick chỉ hiện qua showCheck() sau khi đóng mái
+        if (this.checkmark) this.checkmark.active = false;
         this.build(capacity);
         this.body.spriteFrame = this.skin.emptyFrame;
         this.slots.forEach((sprite, i) => {
