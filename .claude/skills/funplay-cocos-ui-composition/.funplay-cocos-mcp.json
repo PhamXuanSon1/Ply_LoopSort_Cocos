@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "skillId": "cocos-ui-composition",
+  "skillName": "funplay-cocos-ui-composition",
+  "templateVersion": 3,
+  "templateHash": "aa57456be315901395adc8ba83e6fe55b5a4c996659365bcea9a76fa1e55d6f8",
+  "installedHash": "aa57456be315901395adc8ba83e6fe55b5a4c996659365bcea9a76fa1e55d6f8",
+  "files": {
+    "SKILL.md": {
+      "templateHash": "aa57456be315901395adc8ba83e6fe55b5a4c996659365bcea9a76fa1e55d6f8",
+      "installedHash": "aa57456be315901395adc8ba83e6fe55b5a4c996659365bcea9a76fa1e55d6f8"
+    },
+    "references/layout-and-adaptation.md": {
+      "templateHash": "04eab714246a80077e87a9be525a1be3bfb1b365a9d167bb1f55a9068bb87257",
+      "installedHash": "04eab714246a80077e87a9be525a1be3bfb1b365a9d167bb1f55a9068bb87257"
+    },
+    "references/sprites-and-importers.md": {
+      "templateHash": "466062877f01b84895294f36c65176b968cd247c10f55c7eaf253509229863c3",
+      "installedHash": "466062877f01b84895294f36c65176b968cd247c10f55c7eaf253509229863c3"
+    },
+    "references/text-and-localization.md": {
+      "templateHash": "519c280dcc5bc868e87b142298fa6bc95e19e613497627f6ef6461e7805ccbb4",
+      "installedHash": "519c280dcc5bc868e87b142298fa6bc95e19e613497627f6ef6461e7805ccbb4"
+    },
+    "references/input-and-validation.md": {
+      "templateHash": "ebf57c3620b7a812ad3e102e4be4f9d87883312eb3c68bde2825c066174361cc",
+      "installedHash": "ebf57c3620b7a812ad3e102e4be4f9d87883312eb3c68bde2825c066174361cc"
+    }
+  },
+  "extensionVersion": "0.6.8",
+  "updatedAt": "2026-10-23T07:14:28.036Z"
+}
