@@ -9,7 +9,7 @@
  *   nằm trên cùng, được ẩn khi khối đang bay ra / vào và vẽ lại khi anim xong (`updateOutline()`).
  * - Hàm: `refresh(colors, capacity)` vẽ lại hàng, `slotOut(i)` khối trượt ra phía đuôi xe rồi biến mất,
  *   `slotIn(i)` khối bật vào từ phía đuôi xe, `closeCover(done)` kéo mái che từ đầu xe ra đuôi (mask),
- *   `punch()` nảy nhẹ thân xe, `showCheck()` hiện dấu tick, `hitTest()` kiểm tra điểm chạm có trúng xe không.
+ *   `punch()` nảy nhẹ thân xe (hiện không dùng: thân xe đứng yên khi nhận khối), `showCheck()` hiện dấu tick, `hitTest()` kiểm tra điểm chạm có trúng xe không.
  */
 import { _decorator, CCObject, Component, Mask, Node, Sprite, Tween, tween, UITransform, v3, Vec2, Vec3 } from 'cc';
 import { EDITOR } from 'cc/env';
@@ -22,32 +22,51 @@ const { ccclass, property, executeInEditMode } = _decorator;
 @executeInEditMode
 export class CarGraphic extends Component {
 
-    @property({ type: Sprite, tooltip: 'Sprite thân xe' })
+    // =========================================================================
+    // 1. THUỘC TÍNH INSPECTOR (PROPERTIES)
+    // =========================================================================
+
+    // ---------- Tham chiếu Node / Sprite ----------
+    @property({ group: { name: 'Tham Chiếu', id: 'ref', displayOrder: 0 }, type: Sprite, tooltip: 'Sprite thân xe' })
     body: Sprite = null!;
-    @property({ type: Node, tooltip: 'Node dấu tick đánh dấu xe hoàn thành' })
+
+    @property({ group: { name: 'Tham Chiếu', id: 'ref', displayOrder: 0 }, type: Node, tooltip: 'Node dấu tick đánh dấu xe hoàn thành' })
     checkmark: Node = null!;
 
+    // ---------- Kích thước & Tọa độ thùng xe ----------
     // Vùng chứa hàng của thùng xe theo tọa độ Body (đầu xe bên trái); tự đối xứng khi đầu xe bên phải
-    @property({ tooltip: 'Tọa độ X mép thùng xe sát đầu xe' })
+    @property({ group: { name: 'Thông Số Thùng Xe', id: 'layout', displayOrder: 1 }, tooltip: 'Tọa độ X mép thùng xe sát đầu xe' })
     bedCabX: number = -205;
-    @property({ tooltip: 'Tọa độ X mép thùng xe ở đuôi xe' })
+
+    @property({ group: { name: 'Thông Số Thùng Xe', id: 'layout', displayOrder: 1 }, tooltip: 'Tọa độ X mép thùng xe ở đuôi xe' })
     bedRearX: number = 273;
-    @property({ tooltip: 'Tọa độ Y của các ô hàng' })
+
+    @property({ group: { name: 'Thông Số Thùng Xe', id: 'layout', displayOrder: 1 }, tooltip: 'Tọa độ Y của các ô hàng' })
     bedY: number = 44;
-    @property({ tooltip: 'Khoảng cách giữa hai khối hàng liền kề' })
+
+    @property({ group: { name: 'Thông Số Thùng Xe', id: 'layout', displayOrder: 1 }, tooltip: 'Khoảng cách giữa hai khối hàng liền kề' })
     gap: number = 3;
-    @property({ tooltip: 'Chiều cao của một ô hàng' })
+
+    @property({ group: { name: 'Thông Số Thùng Xe', id: 'layout', displayOrder: 1 }, tooltip: 'Chiều cao của một ô hàng' })
     slotHeight: number = 174;
-    @property({ tooltip: 'Thời gian (giây) kéo mái che phủ kín thùng xe' })
+
+    // ---------- Cấu hình Hiệu ứng (Animations) ----------
+    @property({ group: { name: 'Hiệu Ứng', id: 'anim', displayOrder: 2 }, tooltip: 'Thời gian (giây) kéo mái che phủ kín thùng xe' })
     coverDuration: number = 0.45;
-    @property({ tooltip: 'Thời gian (giây) một khối trượt ra / bật vào thùng xe' })
+
+    @property({ group: { name: 'Hiệu Ứng', id: 'anim', displayOrder: 2 }, tooltip: 'Thời gian (giây) một khối trượt ra / bật vào thùng xe' })
     slotAnimDuration: number = 0.18;
-    @property({ tooltip: 'Quãng đường (pixel) khối trượt về phía đuôi xe khi ra / vào' })
+
+    @property({ group: { name: 'Hiệu Ứng', id: 'anim', displayOrder: 2 }, tooltip: 'Quãng đường (pixel) khối trượt về phía đuôi xe khi ra / vào' })
     slotAnimDistance: number = 70;
 
     // Thông số của lần dàn ô gần nhất; chỉ dàn lại khi thông số này thay đổi
     @property({ visible: false })
     layoutKey: string = '';
+
+    // =========================================================================
+    // 2. TRẠNG THÁI NỘI BỘ (INTERNAL STATE)
+    // =========================================================================
 
     skin: CarSkin = null!;
     slots: Sprite[] = [];
@@ -60,6 +79,10 @@ export class CarGraphic extends Component {
     // Ô đã được giữ chỗ cho khối đang trên đường tới (chưa hiện cho tới khi slotIn)
     pending: Set<number> = new Set();
     previewKey: string = '';
+
+    // =========================================================================
+    // 3. VÒNG ĐỜI & KHỞI TẠO (LIFECYCLE & GETTERS)
+    // =========================================================================
 
     onLoad() {
         this.skin = this.getComponent(CarSkin) || this.node.parent?.getComponent(CarSkin);
@@ -81,6 +104,10 @@ export class CarGraphic extends Component {
         }
         return root;
     }
+
+    // =========================================================================
+    // 4. DÀN Ô HÀNG TRÊN THÙNG XE (SLOT LAYOUT & HIERARCHY)
+    // =========================================================================
 
     getLayoutKey(capacity: number): string {
         return JSON.stringify([capacity, this.cabOnLeft, this.bedCabX, this.bedRearX, this.bedY, this.gap, this.slotHeight]);
@@ -112,7 +139,10 @@ export class CarGraphic extends Component {
             this.slots.push(node.getComponent(Sprite));
         }
         if (relayout) this.layout(capacity, key);
-        this.homes = this.slots.map(s => s.node.position.clone());
+        // Chỉ ghi nhận vị trí gốc khi vừa dàn ô hoặc lần đầu; không lấy lại giữa chừng vì ô có thể đang bay (lệch chỗ)
+        if (relayout || this.homes.length != this.slots.length) {
+            this.homes = this.slots.map(s => s.node.position.clone());
+        }
     }
 
     // Dàn đều các ô từ mép thùng sát đầu xe tới mép thùng ở đuôi xe
@@ -128,6 +158,10 @@ export class CarGraphic extends Component {
         });
     }
 
+    // =========================================================================
+    // 5. HIỂN THỊ & VẼ LẠI HÀNG HÓA (REFRESH & RENDER)
+    // =========================================================================
+
     refresh(colors: ColorType[], capacity: number) {
         if (!this.skin) return;
         this.colors = colors;
@@ -142,6 +176,18 @@ export class CarGraphic extends Component {
         });
         this.updateOutline();
     }
+
+    resetSlot(i: number) {
+        let node = this.slots[i]?.node;
+        if (!node || !this.homes[i]) return;
+        Tween.stopAllByTarget(node);
+        node.setPosition(this.homes[i]);
+        node.setScale(1, 1, 1);
+    }
+
+    // =========================================================================
+    // 6. VIỀN NHÓM KHỐI HÀNG (OUTLINE 9-SLICE)
+    // =========================================================================
 
     // Node viền đen Body/Cargo/Outline, luôn vẽ trên các ô hàng; tạo mới nếu chưa có
     get outline(): Sprite {
@@ -191,17 +237,13 @@ export class CarGraphic extends Component {
         sprite.getComponent(UITransform).setContentSize(max - min, height);
     }
 
+    // =========================================================================
+    // 7. HIỆU ỨNG KHỐI HÀNG RA / VÀO (SLOT ANIMATIONS)
+    // =========================================================================
+
     // Hướng từ đầu xe ra đuôi xe trên trục X (+1 khi đầu xe bên trái)
     get rearDir(): number {
         return this.cabOnLeft ? 1 : -1;
-    }
-
-    resetSlot(i: number) {
-        let node = this.slots[i]?.node;
-        if (!node || !this.homes[i]) return;
-        Tween.stopAllByTarget(node);
-        node.setPosition(this.homes[i]);
-        node.setScale(1, 1, 1);
     }
 
     // Khối ở ô i trượt ra phía đuôi xe (về phía băng chuyền), thu nhỏ rồi tắt
@@ -230,7 +272,7 @@ export class CarGraphic extends Component {
         this.hideOutline();
     }
 
-    // Khối ở ô i bật vào từ phía đuôi xe rồi nảy nhẹ khi vào chỗ
+    // Khối ở ô i trượt vào từ phía đuôi xe và dừng đúng kích thước, đúng chỗ (không phóng quá cỡ để không đè ô bên cạnh)
     slotIn(i: number) {
         this.pending.delete(i);
         let node = this.slots[i]?.node;
@@ -242,11 +284,17 @@ export class CarGraphic extends Component {
         node.setScale(0.4, 0.4, 1);
         this.hideOutline();
         tween(node)
-            .to(this.slotAnimDuration, { position: home, scale: v3(1.12, 1.12, 1) }, { easing: 'quadOut' })
-            .to(0.1, { scale: v3(1, 1, 1) }, { easing: 'backOut' })
-            .call(() => this.updateOutline())
+            .to(this.slotAnimDuration, { position: home, scale: v3(1, 1, 1) }, { easing: 'quadOut' })
+            .call(() => {
+                this.resetSlot(i);
+                this.updateOutline();
+            })
             .start();
     }
+
+    // =========================================================================
+    // 8. HIỆU ỨNG XE HOÀN THÀNH (COMPLETE & FX)
+    // =========================================================================
 
     // Mái che trượt trên thùng xe từ đầu tới đuôi: sprite xe đóng nắp dần lộ ra qua mask mở rộng
     closeCover(done?: () => void) {
@@ -285,7 +333,6 @@ export class CarGraphic extends Component {
                 this.body.spriteFrame = this.skin.closedFrame;
                 this.slots.forEach(s => s.node.active = false);
                 mask.destroy();
-                this.punch();
                 done && done();
             })
             .start();
@@ -308,6 +355,10 @@ export class CarGraphic extends Component {
         this.checkmark.setScale(0, 0, 1);
         tween(this.checkmark).to(0.25, { scale: base }, { easing: 'backOut' }).start();
     }
+
+    // =========================================================================
+    // 9. TƯƠNG TÁC & XEM TRƯỚC TRONG EDITOR (INTERACTION & PREVIEW)
+    // =========================================================================
 
     hitTest(screenPos: Vec2): boolean {
         return this.body.getComponent(UITransform).hitTest(screenPos);
