@@ -11,23 +11,23 @@ const { ccclass, property } = _decorator;
 
 ccenum(ColorType);
 
-// One cargo unit as it sits in the truck bed (already clipped by the truck side wall)
+// Khối hàng hiển thị trên thùng xe (ảnh đã được cắt khớp với thành xe)
 @ccclass('CargoUnitFrame')
 export class CargoUnitFrame {
-    @property({ type: Enum(ColorType) })
+    @property({ type: Enum(ColorType), tooltip: 'Loại màu của khối hàng' })
     color: ColorType = ColorType.Red;
-    @property(SpriteFrame)
+    @property({ type: SpriteFrame, tooltip: 'SpriteFrame tương ứng của khối hàng màu này' })
     frame: SpriteFrame = null!;
 }
 
-// Sprites of a car; on the car itself (prefab) or on the parent node to share between cars
+// Bộ sprite của xe; gắn trên chính xe (prefab) hoặc trên node cha để dùng chung giữa các xe
 @ccclass('CarSkin')
 export class CarSkin extends Component {
-    @property(SpriteFrame)
+    @property({ type: SpriteFrame, tooltip: 'Ảnh xe khi thùng rỗng / đang mở nắp' })
     emptyFrame: SpriteFrame = null!;
-    @property(SpriteFrame)
+    @property({ type: SpriteFrame, tooltip: 'Ảnh xe khi đã đóng mái che (hoàn thành)' })
     closedFrame: SpriteFrame = null!;
-    @property([CargoUnitFrame])
+    @property({ type: [CargoUnitFrame], tooltip: 'Danh sách sprite khối hàng theo từng màu' })
     units: CargoUnitFrame[] = [];
 
     getUnit(color: ColorType): SpriteFrame {

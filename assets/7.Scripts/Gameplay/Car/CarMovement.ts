@@ -11,12 +11,12 @@ const { ccclass, property } = _decorator;
 @ccclass('CarMovement')
 export class CarMovement extends Component {
 
-    // -1 = cab points left (rear faces the belt on the right), 1 = cab points right
-    @property
+    // -1 = đầu xe hướng sang trái (đuôi quay về băng chuyền bên phải), 1 = đầu xe hướng sang phải
+    @property({ tooltip: 'Hướng đầu xe: -1 là quay trái (đuôi hướng về băng chuyền bên phải), 1 là quay phải' })
     facing: number = -1;
-    @property
+    @property({ tooltip: 'Khoảng cách (pixel) xe chạy ra ngoài màn hình' })
     driveDistance: number = 1600;
-    @property
+    @property({ tooltip: 'Thời gian (giây) xe chạy ra ngoài màn hình' })
     driveDuration: number = 0.7;
 
     origin: Vec3 = null!;
@@ -25,7 +25,7 @@ export class CarMovement extends Component {
         this.origin = this.node.position.clone();
     }
 
-    // tap on a car that cannot unload
+    // Rung lắc khi chạm vào xe không thể dỡ hàng
     shake() {
         Tween.stopAllByTarget(this.node);
         this.node.setPosition(this.origin);
@@ -38,7 +38,7 @@ export class CarMovement extends Component {
             .start();
     }
 
-    // small push toward the belt while unloading
+    // Nhích nhẹ về phía băng chuyền khi đang dỡ hàng
     nudge() {
         Tween.stopAllByTarget(this.node);
         this.node.setPosition(this.origin);
@@ -49,7 +49,7 @@ export class CarMovement extends Component {
             .start();
     }
 
-    // drive off screen through the cab side, then hide
+    // Chạy ra ngoài màn hình về phía đầu xe, sau đó ẩn đi
     driveAway(done?: () => void) {
         Tween.stopAllByTarget(this.node);
         let o = this.origin;

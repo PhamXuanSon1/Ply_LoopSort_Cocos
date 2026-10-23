@@ -28,7 +28,7 @@ export enum CarState {
     Complete,
 }
 
-// 'unload' (car, colors[]) when a car drops its top units, 'complete' (car) when a car is full of one colour
+// 'unload' (car, colors[]) khi xe dỡ các khối trên cùng, 'complete' (car) khi xe chứa đủ hàng cùng một màu
 export const carEvents = new EventTarget();
 
 @ccclass('CarController')
@@ -36,14 +36,14 @@ export class CarController extends Component {
 
     static all: CarController[] = [];
 
-    // cargo from the cab (index 0) to the rear; the last one is the top unit that leaves first
-    @property({ type: [Enum(ColorType)] })
+    // Hàng hóa từ đầu xe (index 0) tới đuôi; phần tử cuối cùng là khối nằm trên cùng ra trước
+    @property({ type: [Enum(ColorType)], tooltip: 'Danh sách màu hàng hóa từ đầu xe (index 0) tới đuôi; phần tử cuối nằm trên cùng sẽ dỡ ra trước' })
     colors: ColorType[] = [];
-    // number of cargo slots on this car; the graphic spreads them over the truck bed
-    @property({ min: 1, step: 1 })
+    // Số ô chứa hàng trên xe; phần hình ảnh sẽ chia đều các ô này trên thùng xe
+    @property({ min: 1, step: 1, tooltip: 'Số ô chứa hàng tối đa trên xe' })
     capacity: number = 4;
-    // seconds between two units leaving the car
-    @property
+    // Thời gian giãn cách (giây) giữa hai khối rời khỏi xe
+    @property({ tooltip: 'Thời gian giãn cách (giây) giữa hai lần dỡ khối liên tiếp' })
     unloadInterval: number = 0.25;
 
     state: CarState = CarState.Idle;
@@ -89,7 +89,7 @@ export class CarController extends Component {
         return this.state == CarState.Idle && !this.isEmpty();
     }
 
-    // number of same-coloured units on top
+    // Số lượng khối cùng màu nằm liên tiếp ở trên cùng
     topRunCount(): number {
         let n = 0;
         for (let i = this.colors.length - 1; i >= 0 && this.colors[i] == this.topColor; i--) n++;
@@ -110,7 +110,7 @@ export class CarController extends Component {
         let units = this.colors.slice(this.colors.length - this.topRunCount());
         sm?.playSound(SoundType.Touch);
         if (carEvents.hasEventListener('unload')) {
-            // a conveyor system takes the units from here
+            // Hệ thống băng chuyền sẽ tiếp nhận các khối từ đây
             this.colors.length -= units.length;
             this.graphic.refresh(this.colors, this.capacity);
             this.movement.nudge();
@@ -120,7 +120,7 @@ export class CarController extends Component {
         this.transferDirect(units.length);
     }
 
-    // Temporary until the conveyor exists: send the units straight to the best receiving car
+    // Tạm thời khi chưa có băng chuyền: chuyển các khối thẳng sang xe nhận phù hợp nhất
     transferDirect(count: number) {
         let color = this.topColor;
         if (!CarController.findReceiver(color, this)) {
@@ -156,7 +156,7 @@ export class CarController extends Component {
     complete() {
         this.state = CarState.Complete;
         sm?.playSound(SoundType.Full);
-        // roof closes over the cargo, then the tick pops on the roof; the car stays where it is
+        // Mái che đóng lại phủ lên thùng hàng, sau đó dấu tích hiện lên trên mái; xe đứng yên tại chỗ
         this.graphic.closeCover(() => {
             this.graphic.showCheck();
             this.scheduleOnce(() => CarController.checkWin(), 0.6);
@@ -164,7 +164,7 @@ export class CarController extends Component {
         carEvents.emit('complete', this);
     }
 
-    // a car already holding this colour beats an empty car
+    // Xe đã có sẵn màu này được ưu tiên hơn xe rỗng
     static findReceiver(color: ColorType, except: CarController = null): CarController {
         let cars = CarController.all.filter(c => c != except && c.node.activeInHierarchy && c.canReceive(color));
         return cars.find(c => !c.isEmpty()) || cars[0] || null;
