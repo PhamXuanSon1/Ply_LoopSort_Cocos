@@ -1,7 +1,8 @@
 /**
  * CarSkin: kho ảnh của xe (ảnh xe rỗng, xe đóng nắp, ảnh 1 khối hàng cho từng màu), gắn trên prefab `Truck`.
  *
- * - `units`: mỗi màu một ảnh khối (`LoopSort/CargoUnits/Left/<Màu>.png`); CarGraphic tự kéo giãn theo số ô.
+ * - `units`: mỗi màu một ảnh khối (`LoopSort/CargoUnits/Left/<Màu>.png`), không có viền; CarGraphic tự kéo giãn theo số ô.
+ * - `outlineFrame`: viền đen 9-slice, CarGraphic chỉ vẽ quanh nhóm khối cùng màu trên cùng (nhóm sẽ dỡ ra khi chạm).
  * - Nếu không có trên xe, CarGraphic tìm CarSkin ở node cha (dùng chung cho nhiều xe).
  * - Cocos chỉ cho mỗi file một component, nên lớp này phải nằm ở file riêng.
  */
@@ -29,6 +30,8 @@ export class CarSkin extends Component {
     closedFrame: SpriteFrame = null!;
     @property({ type: [CargoUnitFrame], tooltip: 'Danh sách sprite khối hàng theo từng màu' })
     units: CargoUnitFrame[] = [];
+    @property({ type: SpriteFrame, tooltip: 'Viền đen (9-slice) bao quanh nhóm khối cùng màu nằm trên cùng (`CargoUnits/<Hướng>/Outline.png`)' })
+    outlineFrame: SpriteFrame = null!;
 
     getUnit(color: ColorType): SpriteFrame {
         let unit = this.units.find(u => u.color == color);
