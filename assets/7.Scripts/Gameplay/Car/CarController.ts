@@ -6,7 +6,7 @@
  * - Hàm chính:
  *   - `onTap()`: xử lý khi xe bị chạm.
  *   - `canReceive(color)`: kiểm tra xe có nhận được khối màu này không.
- *   - `receive(color)`: cho khối vào xe.
+ *   - `receive(color, delay)`: cho khối vào xe (giữ chỗ ngay, khối bật vào sau `delay` giây).
  *   - `complete()`: xe đủ `capacity` khối cùng màu: kéo mái che, hiện tick, xe đứng yên.
  *   - `checkWin()`: kiểm tra thắng.
  * - Sự kiện `carEvents`: phát `'unload'` khi xe đổ hàng và `'complete'` khi xe đủ hàng.
@@ -34,6 +34,7 @@ export const carEvents = new EventTarget();
 @ccclass('CarController')
 export class CarController extends Component {
 
+    // Danh sách tất cả các xe trong scene; dùng để tìm xe nhận hàng khi chưa có băng chuyền
     static all: CarController[] = [];
 
     // Hàng hóa từ đầu xe (index 0) tới đuôi; phần tử cuối cùng là khối nằm trên cùng ra trước
@@ -111,9 +112,11 @@ export class CarController extends Component {
         sm?.playSound(SoundType.Touch);
         if (carEvents.hasEventListener('unload')) {
             // Hệ thống băng chuyền sẽ tiếp nhận các khối từ đây
+            let top = this.colors.length - 1;
             this.colors.length -= units.length;
-            this.graphic.refresh(this.colors, this.capacity);
-            this.movement.nudge();
+            this.movement.backUp();
+            units.forEach((_, k) => this.scheduleOnce(() => this.graphic.slotOut(top - k), k * this.unloadInterval));
+            this.scheduleOnce(() => this.movement.settle(), units.length * this.unloadInterval + 0.1);
             carEvents.emit('unload', this, units);
             return;
         }
@@ -128,27 +131,40 @@ export class CarController extends Component {
             return;
         }
         this.state = CarState.Unloading;
-        this.movement.nudge();
+        // Xe lùi lại để đuôi xe sát băng chuyền rồi mới bắt đầu dỡ
+        this.movement.backUp();
         let step = (i: number) => {
             let target = CarController.findReceiver(color, this);
             if (i >= count || !target || this.topColor != color) {
                 this.state = CarState.Idle;
+                this.movement.settle();
                 return;
             }
             this.colors.pop();
-            this.graphic.refresh(this.colors, this.capacity);
-            target.receive(color);
+            this.graphic.slotOut(this.colors.length);
+            // Xe nhận giữ chỗ ngay, khối chỉ hiện ở xe nhận khi khối ở xe này đã trượt ra xong
+            target.receive(color, this.graphic.slotAnimDuration);
             this.scheduleOnce(() => step(i + 1), this.unloadInterval);
         };
-        step(0);
+        this.scheduleOnce(() => step(0), this.movement.backDuration);
     }
 
-    receive(color: ColorType) {
+    // Nhận một khối; delay > 0 thì ô được giữ chỗ ngay (logic đã tính khối này) nhưng khối hiện sau `delay` giây
+    receive(color: ColorType, delay: number = 0) {
         this.colors.push(color);
+        let index = this.colors.length - 1;
+        this.graphic.reserve(index);
         this.graphic.refresh(this.colors, this.capacity);
-        this.graphic.punch();
+        if (delay > 0) this.scheduleOnce(() => this.land(index, color), delay);
+        else this.land(index, color);
+    }
+
+    // Khối vào hẳn thùng xe: chỉ khối mới bật vào (thân xe đứng yên); đủ hàng cùng màu thì hoàn thành
+    land(index: number, color: ColorType) {
+        this.graphic.slotIn(index);
         sm?.playSound(SoundType.Match);
-        if (this.colors.length >= this.capacity && this.colors.every(c => c == color)) {
+        if (this.state != CarState.Complete && this.graphic.pending.size == 0 &&
+            this.colors.length >= this.capacity && this.colors.every(c => c == color)) {
             this.complete();
         }
     }
