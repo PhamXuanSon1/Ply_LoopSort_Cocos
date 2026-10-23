@@ -5,7 +5,8 @@
  *   Thứ tự node = chiều chạy của băng. Đường đi qua mọi điểm, được làm mượt bằng Catmull-Rom (`smoothStep`, `tension`).
  * - `closed`: băng vòng kín (điểm cuối nối về điểm đầu). Băng hở thì hàng chạy tới cuối sẽ hiện lại ở đầu (như cổng ở game gốc).
  * - Vẽ 3 lớp Graphics con: `Shadow` (bóng đổ), `Rim` (gờ, rộng `laneWidth`), `Face` (mặt băng, hẹp hơn 2*`rimWidth`),
- *   cộng mũi tên chỉ chiều chạy (`Arrows`, cách đều `arrowSpacing`). Mũi tên được tạo lại mỗi lần vẽ và không lưu vào scene.
+ *   cộng mũi tên chỉ chiều chạy (`Arrows`, cách đều `arrowSpacing`), khi chơi trôi chậm theo chiều băng (`arrowSpeed`)
+ *   và mờ dần ở hai đầu băng hở (`arrowFade`). Mũi tên được tạo lại mỗi lần vẽ và không lưu vào scene.
  * - Tự vẽ lại trong editor khi điểm hoặc thông số đổi. Conveyor dùng `length`, `pointAt(s)`, `project(p)` để chạy hàng trên băng
  *   (tọa độ theo node chứa ConveyorLine).
  */
@@ -52,21 +53,34 @@ export class ConveyorLine extends Component {
     arrowHeight: number = 32;
     @property({ group: { name: 'Mũi Tên', id: 'arrow', displayOrder: 2 }, tooltip: 'Màu mũi tên' })
     arrowColor: Color = new Color(120, 112, 210, 255);
+    @property({ group: { name: 'Mũi Tên', id: 'arrow', displayOrder: 2 }, tooltip: 'Tốc độ mũi tên trôi theo chiều băng (pixel/giây), như game gốc trôi chậm hơn hàng nhiều lần; 0 = đứng yên' })
+    arrowSpeed: number = 150;
+    @property({ group: { name: 'Mũi Tên', id: 'arrow', displayOrder: 2 }, tooltip: 'Băng hở: mũi tên mờ dần trong đoạn này khi tới gần hai đầu băng' })
+    arrowFade: number = 120;
 
     // Đường đã làm mượt (tọa độ node này), độ dài cộng dồn tới từng điểm và tổng độ dài
     poses: Vec3[] = [];
     cum: number[] = [];
     length: number = 0;
     snapshot: string = '';
+    // Mũi tên đang hiện và độ trôi hiện tại của chúng dọc theo băng
+    arrows: Sprite[] = [];
+    arrowOffset: number = 0;
 
     onLoad() {
         this.rebuild();
     }
 
-    // Trong editor: vẽ lại khi kéo điểm hoặc đổi thông số
-    update() {
-        if (!EDITOR_NOT_IN_PREVIEW) return;
-        if (this.makeKey() != this.snapshot) this.rebuild();
+    // Trong editor: vẽ lại khi kéo điểm hoặc đổi thông số. Khi chơi: mũi tên trôi theo chiều băng
+    update(dt: number) {
+        if (EDITOR_NOT_IN_PREVIEW) {
+            if (this.makeKey() != this.snapshot) this.rebuild();
+            return;
+        }
+        if (this.arrowSpeed != 0 && this.arrows.length > 0) {
+            this.arrowOffset += this.arrowSpeed * dt;
+            this.placeArrows();
+        }
     }
 
     get pointsRoot(): Node {
@@ -167,12 +181,10 @@ export class ConveyorLine extends Component {
         let root = this.node.getChildByName('Arrows') || this.createChild('Arrows');
         root.setSiblingIndex(3);
         root.removeAllChildren();
+        this.arrows = [];
         if (!this.arrowFrame || this.arrowSpacing <= 0 || this.length <= 0) return;
         let count = Math.max(1, Math.round(this.length / this.arrowSpacing));
-        let gap = this.length / count;
-        let pos = v3(), dir = v3();
         for (let i = 0; i < count; i++) {
-            this.pointAt((i + 0.5) * gap, pos, dir);
             let node = new Node('Arrow' + i);
             node._objFlags |= CCObject.Flags.DontSave | CCObject.Flags.HideInHierarchy;
             node.layer = root.layer;
@@ -182,9 +194,31 @@ export class ConveyorLine extends Component {
             sprite.sizeMode = Sprite.SizeMode.CUSTOM;
             sprite.spriteFrame = this.arrowFrame;
             sprite.color = this.arrowColor;
-            node.setPosition(pos);
-            node.angle = Math.atan2(dir.y, dir.x) * 180 / Math.PI - 90;
+            this.arrows.push(sprite);
         }
+        this.placeArrows();
+    }
+
+    // Đặt mũi tên cách đều dọc băng, lệch theo arrowOffset; băng hở thì mũi tên mờ dần ở hai đầu
+    placeArrows() {
+        let count = this.arrows.length;
+        if (count == 0 || this.length <= 0) return;
+        let gap = this.length / count;
+        let pos = v3(), dir = v3();
+        let color = new Color();
+        this.arrows.forEach((sprite, i) => {
+            let s = this.wrap((i + 0.5) * gap + this.arrowOffset);
+            this.pointAt(s, pos, dir);
+            sprite.node.setPosition(pos);
+            sprite.node.angle = Math.atan2(dir.y, dir.x) * 180 / Math.PI - 90;
+            let alpha = 1;
+            if (!this.closed && this.arrowFade > 0) {
+                alpha = Math.min(1, s / this.arrowFade, (this.length - s) / this.arrowFade);
+            }
+            color.set(this.arrowColor);
+            color.a = Math.round(this.arrowColor.a * Math.max(0, alpha));
+            sprite.color = color;
+        });
     }
 
     // =========================================================================
