@@ -5,32 +5,47 @@
 // Learn life-cycle callbacks:
 //  - https://docs.cocos.com/creator/2.4/manual/en/scripting/life-cycle-callbacks.html
 
-import { Component, Node, Prefab, Quat, Vec3, _decorator, instantiate, log, v3 } from "cc"; 
+import { CCInteger, Component, Node, Prefab, Quat, Vec3, _decorator, instantiate, log, v3 } from "cc"; 
 // import { PoolAmount } from "./PoolAmount";
 import { PoolMember, PoolType } from "./PoolMember";
-import { PoolAmount, PoolManager } from "./PoolManager";
+import { PoolManager } from "./PoolManager";
 
 const { ccclass, property, executeInEditMode } = _decorator;
 
+@ccclass('PoolAmount')
+export class PoolAmount {
+  // @property(Node)
+  public root: Node = null;
 
-@ccclass('PoolControl')
+  @property(Prefab)
+  public prefab: PoolMember = null;
+
+  @property(CCInteger)
+  public amount: number = 0;
+}
+
+@ccclass
 @executeInEditMode(true)
 export default class PoolControl extends Component {
 
   @property(Node)
   root: Node = null;
-  @property([Prefab])
-  prefabs: PoolMember[] = [];
+  // @property([Prefab])
+  // prefabs: PoolMember[] = [];
 
+  @property([PoolAmount])
   poolAmounts: PoolAmount[] = [];
 
   preLoad() {
-    this.prefabs.forEach((prefab, index) => {
-      let poolAmount = new PoolAmount();
+    // this.prefabs.forEach((prefab, index) => {
+    //   let poolAmount = new PoolAmount();
+    //   poolAmount.root = this.root;
+    //   poolAmount.prefab = prefab;
+    //   poolAmount.amount = 0;
+    //   this.poolAmounts.push(poolAmount);
+    // })
+    this.poolAmounts.forEach((poolAmount, index) => {
       poolAmount.root = this.root;
-      poolAmount.prefab = prefab;
-      poolAmount.amount = 0;
-      this.poolAmounts.push(poolAmount);
     })
   }
 

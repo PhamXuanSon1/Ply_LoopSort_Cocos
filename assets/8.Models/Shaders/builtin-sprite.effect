@@ -21,7 +21,6 @@ CCEffect %{
         contrast: { value: 1.0, editor: { slide: true, range: [0.0, 2.0], step: 0.001 }  }
         saturation: { value: 1.0, editor: { slide: true, range: [0.0, 2.0], step: 0.001 } }
         hue:        { value: 0.0, editor: { slide: true, range: [-180.0, 180.0], step: 1.0 } }    # độ
-        tint: {value: [1, 1, 1, 1], editor: { type: color}}
 }%
 
 CCProgram sprite-vs %{
@@ -69,14 +68,10 @@ CCProgram sprite-fs %{
   precision highp float;
   #include <builtin/internal/embedded-alpha>
   #include <builtin/internal/alpha-test>
-  bool use = true;
-  bool notuse = false;
-  #pragma define-meta useTint options([notuse, use])
 
   in vec4 color;
 
   uniform Constant {
-    vec4 tint;
     float alpha;
     float brightness;
     float contrast;
@@ -127,11 +122,6 @@ CCProgram sprite-fs %{
     // Độ bão hòa
     o.rgb = AdjustSaturation(o.rgb, saturation);
     if(o.a < alpha) discard;
-
-    if(useTint == use) {
-      o.rgb = tint.rgb;
-    }
-
     return o;
   }
 }%

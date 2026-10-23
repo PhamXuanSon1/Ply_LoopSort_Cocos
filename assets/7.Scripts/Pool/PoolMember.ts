@@ -13,11 +13,12 @@ const { ccclass, property } = _decorator;
 export enum PoolType {
     Default,
     Slot,
-    Thing,
     Box,
-    VFX,
-    StarVFX
-    
+    Bee,
+    Park,
+    Dome,
+    Pixel,
+    Jigsaw,
 }
 
 @ccclass

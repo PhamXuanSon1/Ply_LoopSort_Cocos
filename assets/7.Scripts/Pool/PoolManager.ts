@@ -5,10 +5,10 @@
 // Learn life-cycle callbacks:
 //  - https://docs.cocos.com/creator/2.4/manual/en/scripting/life-cycle-callbacks.html
 
-import { CCInteger, Component, Node, Prefab, Quat, Vec3, _decorator, instantiate, log, v3 } from "cc"; 
+import { CCInteger, CCObject, Component, Node, Prefab, Quat, Vec3, _decorator, instantiate, log, v3 } from "cc"; 
 // import { PoolAmount } from "./PoolAmount";
 import { PoolMember, PoolType } from "./PoolMember";
-import PoolControl from "./PoolControl";
+import PoolControl, { PoolAmount } from "./PoolControl";
 
 const { ccclass, property, executeInEditMode } = _decorator;
 
@@ -22,6 +22,7 @@ export class Pool {
     this.root = root;
     for (let i = 0; i < amount; i++) {
       let clone = instantiate(prefab).getComponent(PoolMember);
+      clone.node._objFlags = CCObject.Flags.DontSave | CCObject.Flags.HideInHierarchy;
       clone.node.parent = root;
       clone.node.active = false;
       this.list.push(clone);
@@ -32,6 +33,7 @@ export class Pool {
     var clone: PoolMember = null;
     if (this.list.length == 0) {
       clone = instantiate(this.prefab).getComponent(PoolMember);
+      clone.node._objFlags = CCObject.Flags.DontSave | CCObject.Flags.HideInHierarchy;
       clone.node.parent = this.root;
     } else {
       clone = this.list.pop();
@@ -45,22 +47,12 @@ export class Pool {
   despawn(clone: PoolMember) {
     clone.node.parent = this.root;
     clone.node.active = false;
+    clone.node.scale = v3(1, 1, 1);
     clone.node.position = v3(0, 0, 0);
     this.list.push(clone);
   }
 }
 
-@ccclass
-export class PoolAmount {
-  @property(Node)
-  public root: Node = null;
-
-  @property(Prefab)
-  public prefab: PoolMember = null;
-
-  @property(CCInteger)
-  public amount: number = 0;
-}
 
 export var pm: PoolManager = null;
 

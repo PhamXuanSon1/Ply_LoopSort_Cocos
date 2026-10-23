@@ -5,20 +5,20 @@
 // Learn life-cycle callbacks:
 //  - https://docs.cocos.com/creator/2.4/manual/en/scripting/life-cycle-callbacks.html
 
-import { AudioSource, Component, Game, _decorator, game} from 'cc';
+import { AudioSource, CCObject, Component, Game, _decorator, game, instantiate} from 'cc';
 const {ccclass, property} = _decorator;
 
 export enum SoundType{
     BGM,
-    Pick,
-    Done,
-    Fail,
+    Spawn,
+    Full,
+    Touch,
+    Match,
+    Pixel,
+    Lose,
     Win,
-    Alert,
-    LandRight,
-    LandFail,
-    Hen,
-    Hen2
+    Block,
+    Click,
 }
 
 export var sm: SoundManager = null;
@@ -33,13 +33,26 @@ export default class SoundManager extends Component {
     // @property(AudioSource)
     audiosource: AudioSource[] = [];
     volumes: number[] = [];
-    
-    // @property(AudioClip)
-    // audios: AudioClip[] = [];
-    
-    mute: boolean = false;
     fail: boolean = false;
     playBG: boolean = false;
+
+    pools: AudioSource[][] = [];
+    currents: AudioSource[][] = [];
+
+    // voiceIndex: number = SoundType.Match - 1;
+
+    playVoice() {
+        // this.voiceIndex++;
+        // if(this.voiceIndex > SoundType.Coin) this.voiceIndex = SoundType.Match;
+
+        // if(this.voiceIndex == SoundType.Match) {
+        //     lm.room.setTextVfx('EXCELLENT!');
+        // } else if(this.voiceIndex == SoundType.Coin) {
+        //     lm.room.setTextVfx('GOOD JOB!');
+        // }
+
+        // this.playSoundDup(this.voiceIndex);
+    }
 
     playSound(type: SoundType, loop: boolean = false, call = () => {}): AudioSource{
         if(this.fail) return;
@@ -55,15 +68,46 @@ export default class SoundManager extends Component {
         }
         return this.audiosource[type];
     }
-
-    pauseSound(type: SoundType){
-        if(this.audiosource[type]){
-            this.audiosource[type].pause();
+    
+    playSoundDup(type: SoundType, loop: boolean = false, call = () => {}): AudioSource{
+        if(this.fail) return;
+        if(this.audiosource[type]){      
+            let audio = this.pools[type][1];  
+            if(audio) {
+                this.pools[type].shift();
+            } else {
+                audio = instantiate(this.pools[type][0].node).getComponent(AudioSource);
+                audio.node.parent = this.node;
+            }
+            audio.node.parent = this.node;
+            audio.node._objFlags = CCObject.Flags.DontSave | CCObject.Flags.HideInHierarchy;
+            audio.loop = loop;
+            audio.play();
+            this.currents[type].push(audio);
+            setTimeout(() => {
+                call();
+            }, audio.duration*1000);
+            return audio;
         }
+        return this.audiosource[type];
+    }
+
+    despawn(audio: AudioSource) {
+        let origin = this.audiosource.find(a => a.name == audio.name);
+        let type = this.audiosource.indexOf(origin);
+        this.currents[type].splice(this.currents[type].indexOf(audio), 1);
+        this.pools[type].push(audio);
+    }
+
+    validPlayDub(audio: AudioSource) {
+        if(this.fail) return;
+        if(!audio) return;
+        if(audio.playing) return;
+        audio.play();
     }
 
     isPlaying(type: SoundType): boolean {
-        return this.audiosource[type].playing;
+        return this.audiosource[type]?.playing;
     }
     
 
@@ -88,17 +132,21 @@ export default class SoundManager extends Component {
     stopAll(){
         this.fail = true;
         for(let i = 0; i < this.audiosource.length; i++){
-            this.audiosource[i].stop();
+            this.audiosource[i]?.stop();
+            this.pools[i].forEach(a => a.stop());
+            this.currents[i].forEach(a => a.stop());
         }
     }
 
     stopSound(type: SoundType){
-        this.audiosource[type].stop();
+        this.audiosource[type]?.stop();
     }
 
 
     checkAudio() {
+        //@ts-ignore
         if(window.volume !== undefined) {
+            //@ts-ignore
             if(window.volume >= 10) {
                 this.unMuteAll();
             } else {
@@ -110,6 +158,7 @@ export default class SoundManager extends Component {
     playBgMusic() {
         if(this.playBG) return;
         this.playBG = true;
+        
         setTimeout(() => {
             this.playSound(SoundType.BGM, false, () => {
                 this.playSound(SoundType.BGM, true);
@@ -118,11 +167,31 @@ export default class SoundManager extends Component {
     }
     start () {
         // this.playBgMusic();
+        
         this.audiosource = this.node.getComponentsInChildren(AudioSource);
+        // console.log(this.audiosource);
+        
         this.volumes = this.audiosource.map(a => a.volume);
         this.eventSound();        
         this.schedule(this.checkAudio, 1);
         this.checkAudio();
+        let keys = Object.keys(SoundType);
+        keys.splice(0, keys.length/2)
+        this.pools = keys.map((k, i) => []);
+        this.currents = keys.map((k, i) => []);
+        this.audiosource.forEach((a, i) => {
+            for(let index = 0; index < 10; index ++) {
+                let aa = instantiate(a.node).getComponent(AudioSource);
+                aa.node._objFlags = CCObject.Flags.DontSave | CCObject.Flags.HideInHierarchy;
+                aa.node.parent = this.node;
+                this.pools[i].push(aa);
+                // aa.play();
+                // setTimeout(() => {
+                //     aa.stop();
+                // }, 0);
+            }
+        })
+        // console.log(this.pools);
         
         
     }
@@ -170,26 +239,20 @@ export default class SoundManager extends Component {
     public muteAll(): void {
         console.log("muteAll");
         
-        try {
         for(let i = 0; i < this.audiosource.length; i++){
-            this.audiosource[i].volume = 0;
-        }
-            
-        } catch (error) {
-            
+            if(this.audiosource[i]) this.audiosource[i].volume = 0;
+            this.pools[i].forEach(a => a.volume = 0);
+            this.currents[i].forEach(a => a.volume = 0);
         }
     }
 
    public unMuteAll(): void {
         console.log("unMuteAll");
         
-        try {
         for(let i = 0; i < this.audiosource.length; i++){
-            this.audiosource[i].volume = this.volumes[i];
-        }
-            
-        } catch (error) {
-            
+            if(this.audiosource[i]) this.audiosource[i].volume = this.volumes[i];
+            this.pools[i].forEach(a => a.volume = this.volumes[i]);
+            this.currents[i].forEach(a => a.volume = this.volumes[i]);
         }
     }
 

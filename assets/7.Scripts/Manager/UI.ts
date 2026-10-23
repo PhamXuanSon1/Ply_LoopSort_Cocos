@@ -1,10 +1,7 @@
-import { _decorator, Animation, Camera, Color, Component, Director, Enum, EventTouch, Label, misc, Node, ParticleSystem2D, PhysicsSystem, size, Size, Sprite, toDegree, Tween, tween, UITransform, v2, v3, Vec2, Vec3, view, Widget } from 'cc';
-import { World } from './World';
-import { PointerController } from './PointerController';
-import { SoundType } from './SoundManager';
-import { Clock } from './Clock';
-import { ipm } from './InputManager';
-import { room } from '../Gameplay/Room';
+import { _decorator, Animation, Camera, Color, Component, Enum, Label, misc, Node, Sprite, Tween, tween, UITransform, v3, view} from 'cc';
+import { pc, PointerController } from './PointerController';
+import { sm, SoundType } from './SoundManager';
+import { gc } from '../Tool/GameController';
 const { ccclass, property } = _decorator;
 
 export enum BindUIType {
@@ -14,39 +11,70 @@ export enum BindUIType {
     Bottom
 }
 
+export var ui: UI;
+
 @ccclass("BindingUI")
 export class BindingUI {
     @property([Node])
     binds: Node[] = [];
-
     @property({type: Enum(BindUIType)})
     type: BindUIType = BindUIType.Left;
 }
-
-export var ui: UI = null;
 
 @ccclass('UI')
 export class UI extends Component {
 
     @property(Camera)
-    uiCam: Camera = null;
+    uiCamera: Camera = null!;
     @property(Camera)
-    pCam: Camera = null;
+    wCamera: Camera = null!;
+
+    @property(Node)
+    fail: Node = null!;
+    @property(Node)
+    win: Node = null!;
     @property(Node)
     hand: Node = null!;
-    @property(Node)
-    endcard: Node = null!;
-    @property(Node)
-    winCard: Node = null!;
-    win: boolean = false;
 
-    resizeFuncs: Function[] = [];
-    onStoreFuncs: Function[] = [];
+    // @property(Node)
+    startHand: Node = null!;
+    // @property(Node)
+    endHand: Node = null!;
+    current: Node = null!;
+    cTween: Tween<any> = null!;
+    hTween: Tween<any> = null!;
+
+    @property([Node])
+    offButtons: Node[] = [];
+    @property([Node])
+    endOffs: Node[] = [];  
+    @property([Node])
+    fisrtOn: Node[] = [];
+    @property([Node])
+    firstOff: Node[] = [];
+    @property([Node])
+    adaptUIs: Node[] = [];
+    @property([Node])
+    portraitNodes: Node[] = [];
+    @property([Node])
+    landscapeNodes: Node[] = [];
+    @property([Node])
+    gameplays: Node[] = []
+    @property([Node])
+    widthNodes: Node[] = []
+      
+    @property([BindingUI])
+    bindings: BindingUI[] = [];
+
+    moveDir: number = 0;
+    scale: number = 0
+    width: number = 0;
+    height: number = 0;
 
     onLoad() {
-        ui = this;
         
         try {
+            //@ts-ignore
             if(window.redirectStore.toString() == "function redirectStore(){window.open(clickTag)}") {
                 this.offButtons.forEach(node => node.active = false);
             }
@@ -55,20 +83,22 @@ export class UI extends Component {
         } catch (error) {
             
         }
+
+        ui = this;
     }
 
     bindingToStore() {
-        PointerController.ins.unBindingEvent();
-        ipm.offBinding();
-        PointerController.ins.onStore();
+        pc.unBindingEvent();
+        pc.onStore();
     }
 
     openStore(...args: any) {
-        console.log('openStore');  
-        World.ins.soundmanager.stopAll();      
-        World.ins.openStore.redirectToStore();
+        sm.stopAll();
+        console.log('openStore');        
+        gc.redirectToStore();
     }
 
+    
     first: boolean = true;
     firstMove() {
         if(this.first) {
@@ -79,28 +109,108 @@ export class UI extends Component {
     }
 
     onLose() {
-        if(this.endcard.active || this.winCard.active) return;  
-        this.offEnds.forEach(button => button.active = false);
-        this.offHand();
-        this.endcard.active = true;
-        this.bindingToStore();       
-        World.ins.soundmanager.playSound(SoundType.Fail);    
+        // if(this.win.active || this.fail.active) return;
+        this.fail.active = true;
+        this.bindingToStore();     
+        sm.playSound(SoundType.Lose);   
+        this.endOffs.forEach(button => {
+            button.active = false;
+        });
     }
 
-
     onWin() {
-        if(this.endcard.active || this.winCard.active) return; 
-        this.offEnds.forEach(button => button.active = false);
-        this.offHand();
-        this.winCard.active = true;
-        this.bindingToStore();  
-        World.ins.soundmanager.playSound(SoundType.Win);      
+        if(this.win.active || this.fail.active) return;
+        this.win.active = true;
+        this.bindingToStore();     
+        sm.playSound(SoundType.Win);
+        this.endOffs.forEach(button => {
+            button.active = false;
+        });
+    }
+
+    handTap(node: Node) {
+        this.current = node;
+        if(!node) return;
+        this.hand.active = true;
+        let pos = this.hand.worldPosition.clone();
+        this.hand.worldPosition = node.worldPosition.clone();
+        this.hand.worldPositionZ = pos.z;
     }
 
     offHand() {
         this.hand.active = false;
+        this.hTween?.stop();
+        this.cTween?.stop();
+        this.current = null;
     }
 
+    moveHand() {
+        if(!this.startHand || !this.endHand) 
+            return;
+        this.handTap(this.startHand);
+        // return;
+        let child = this.hand.children[0].getComponent(Sprite)!;
+        // child.node.scale = v3(1, 1, 1).multiplyScalar(this.defaultWOrtho / 14 * 0.007);
+        const hand = this.hand;
+        child.color = new Color(255, 255, 255, 255);
+        let pos = this.endHand.getWorldPosition();
+        let delta = this.hand.worldPosition.clone().subtract(pos);
+        if(this.moveDir == 0) {
+
+            let p = v3(this.hand.worldPosition.x,  this.hand.worldPosition.y, pos.z);
+            let dd = this.hand.worldPosition.clone().subtract(p);
+            let tt = dd.length() * 0.15;
+            // console.log(tt);
+
+
+            // Board.ins.tutCat.setMove();
+            this.hTween = tween(this.hand)
+            .delay(0.2)
+            .to(tt, {worldPosition: p}, {easing: 'smooth', 
+            onUpdate(target, ratio) {
+            },})
+            .call(() => {          
+                p = v3(pos.x, this.hand.worldPosition.y,  this.hand.worldPosition.z);
+                let dd = this.hand.worldPosition.clone().subtract(p);
+                let tt = dd.length() * 0.15;
+                // console.log(tt);
+                
+                this.hTween = tween(this.hand)
+                .to(tt, {worldPosition: p}, {easing: 'smooth', 
+                    onUpdate(target, ratio) {
+                    },
+                })
+                .call(() => {
+                    this.cTween = tween(child).delay(0.2).to(0.2, {color: new Color(255, 255, 255, 0)}, {easing: 'smooth'})
+                    .call(() => {
+                        this.moveHand();
+                    })
+                    .start();   
+                })
+                .start();
+            })
+            .start();
+
+        } else if (this.moveDir == 1) {
+
+            let p = v3(pos.x, pos.y, pos.z);
+            let time = delta.length() * 0.2;
+
+
+            this.hTween = tween(this.hand)
+            .delay(0.2)
+            .to(time, {worldPosition: p}, {easing: 'smooth'})
+            .call(() => {          
+                this.cTween = tween(child).delay(0.2).to(0.2, {color: new Color(255, 255, 255, 0)}, {easing: 'smooth'})
+                .call(() => {
+                    this.moveHand();
+                })
+                .start();   
+            })
+            .start();
+
+        }
+    }
 
     @property(BindingUI)
     topNode: BindingUI = null!;
@@ -109,9 +219,7 @@ export class UI extends Component {
     @property(BindingUI)
     leftNode: BindingUI = null!;
     @property(BindingUI)
-    rightNode: BindingUI = null!;      
-    @property([BindingUI])
-    bindings: BindingUI[] = [];
+    rightNode: BindingUI = null!;
 
     getEdge(type: BindUIType) {
         switch(type) {
@@ -127,7 +235,7 @@ export class UI extends Component {
     }
 
     bind() {
-        let pos = this.uiCam.node.position.clone();
+        let pos = this.uiCamera.node.position.clone();
         {
             this.topNode.binds[0].position = this.topNode.binds[0].position.clone();
             this.topNode.binds[0].position = v3(this.topNode.binds[0].position.x + pos.x, 
@@ -175,49 +283,28 @@ export class UI extends Component {
         })   
     }
 
+    
     keepTap() {    
         if(this.current && this.hand.active) {
             this.handTap(this.current);
         }   
     }
 
-    width: number = 0;
-    height: number = 0;
-    scale: number = 0;
-    
-    @property([Node])
-    offButtons: Node[] = [];
-    @property([Node])
-    offEnds: Node[] = [];
-
-    @property([Node])
-    fisrtOn: Node[] = [];
-    @property([Node])
-    firstOff: Node[] = [];
-
-    @property([Node])
-    adaptUIs: Node[] = [];
-    @property([Node])
-    gameplays: Node[] = []
-
-    @property([Node])
-    portraitNodes: Node[] = [];
-    @property([Node])
-    landscapeNodes: Node[] = [];
-
-
-    firstScale: boolean = false;
     resize(scale: number = this.scale) {
         this.scale = scale;
         let time = 0;
-        this.height = this.uiCam.orthoHeight + 0;
+        this.height = this.uiCamera.orthoHeight;
         this.width = 1080/2350 * this.height * scale;  
         console.log(this.width / this.height, this.width, this.height);
         setTimeout(() => {            
             this.keepTap();          
         }, time);
+        let max = 2;
         if(this.width / this.height < 1.5) {
-            scale = misc.clampf(scale, 0, 1.1); 
+            scale = misc.clampf(scale, 1, max);
+            this.gameplays.forEach((item) => {
+                item.scale = v3(1, 1, 1).multiplyScalar(1*scale);          
+            })  
             this.portraitNodes.forEach((item) => {
                 item.active = true;
             });
@@ -227,10 +314,10 @@ export class UI extends Component {
             this.adaptUIs.forEach((item) => {
                 item.scale = v3(1, 1, 1);
             });
-            this.gameplays.forEach((item) => {
-                item.scale = v3(1, 1, 1).multiplyScalar(scale);
-            })      
         } else {
+            this.gameplays.forEach((item) => {
+                item.scale = v3(1, 1, 1).multiplyScalar(max);          
+            })  
             this.portraitNodes.forEach((item) => {
                 item.active = false;
             });
@@ -240,114 +327,26 @@ export class UI extends Component {
             this.adaptUIs.forEach((item) => {
                 item.scale = v3(1, 1, 1).multiplyScalar(2);
             });
-            this.gameplays.forEach((item) => {
-                item.scale = v3(1, 1, 1).multiplyScalar(1.1);
-            })
+
         }
-        this.bind();          
-    }
-
-    handTap(node: Node) {
-        if(!node) return;
-        this.current = node;
-        this.hand.worldPosition = node.getWorldPosition();
-        this.hand.active = true;
-    }
-
-    moveDir: number = 1;
-    // @property(Node)
-    startHand: Node = null!;
-    // @property(Node)
-    endHand: Node = null!;
-    // @property(Node)
-    current: Node = null!;
-    cTween: Tween<any> = null!;
-    hTween: Tween<any> = null!;
-    isFirtMove: number = 0;
-    delayTime: number = 0;
-    moveHand() {
-        if(!this.startHand || !this.endHand) return;
-        let dt = this.delayTime;
-        if(this.isFirtMove > 0) {
-            this.isFirtMove--;
-            dt = 0;
-        }
-        this.hTween = tween({t: 0})
-        .delay(dt)
-        .call(() => {
-            this.handTap(this.startHand);
-            const hand = this.hand;
-            let child = this.hand.children[0].getComponentInChildren(Sprite)!;
-            child.color = new Color(255, 255, 255, 255);
-            // child.node.scale = v3(1, 1, 1).multiplyScalar(2);
-            let pos = this.endHand.getWorldPosition();
-            let delta = this.hand.worldPosition.clone().subtract(pos);
-            
-            if(this.moveDir == 0) {
-
-                let p = v3(pos.x, this.hand.worldPosition.y,  this.hand.worldPosition.z);
-                let time = delta.length() * 0.5;
-
-
-                this.hTween = tween(this.hand)
-                .delay(0.2)
-                .to(time, {worldPosition: p}, {easing: 'smooth'})
-                .call(() => {          
-                    p = v3(this.hand.worldPosition.x,  this.hand.worldPosition.y, pos.z);
-                    let time = delta.length() * 0.5;
-                    this.hTween = tween(this.hand)
-                    .to(time, {worldPosition: p}, {easing: 'smooth'})
-                    .call(() => {
-                        this.cTween = tween(child).delay(0.2).to(0.2, {color: new Color(255, 255, 255, 0)}, {easing: 'smooth'})
-                        .call(() => {
-                            this.moveHand();
-                        })
-                        .start();   
-                    })
-                    .start();
-                })
-                .start();
-
-            } else if (this.moveDir == 1) {
-
-                let p = v3(pos.x, pos.y, pos.z);
-                let time = delta.length() / 1000;
-
-                this.hTween = tween(this.hand)
-                .delay(0.2)
-                .to(time, {worldPosition: p}, {easing: 'smooth',
-                    onUpdate(target, ratio) {
-                    },
-                })
-                .call(() => {         
-                    this.cTween = tween(child).delay(0.2).to(0.2, {}, {easing: 'smooth',
-                        onUpdate(target, ratio) {
-                            child.color = new Color(255, 255, 255, 255 * (1 - ratio));
-                            
-                        },
-                    })
-                    .call(() => {
-                        this.moveHand();
-                    })
-                    .start();   
-                })
-                .start();
-
-            }
+        this.widthNodes.forEach((item) => {
+            let x = item.getWorldScale().x;
+            let uit = item.getComponent(UITransform)!;
+            uit.width = this.width / x * 2;
         })
-        .start();
+        this.bind();  
+        
     }
 
-    start() {
-    }
-
-    update(dt: number) {
+    update(dt: number) {  
         let size = view.getVisibleSize();
         let scale = size.width/1080;
-        if(scale != this.scale) {          
+        if(scale != this.scale) {
             this.resize(scale);
+        }
+
+        if(this.current) {
+            this.handTap(this.current);
         }
     }
 }
-
-

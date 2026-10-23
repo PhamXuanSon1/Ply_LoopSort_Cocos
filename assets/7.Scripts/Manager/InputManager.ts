@@ -1,10 +1,5 @@
 import { _decorator, Component, EventTouch, Input, input, misc, Node, v2, Vec2 } from 'cc';
-import { World } from './World';
-import { ui } from './UI';
-import { sm } from './SoundManager';
 const { ccclass, property } = _decorator;
-
-export var ipm: InputManager = null;
 
 @ccclass('InputManager')
 export class InputManager extends Component {
@@ -13,52 +8,46 @@ export class InputManager extends Component {
 
     onLoad() {
         InputManager.instance = this;
-        ipm = this;
     }
 
     startPos: Vec2 = null;
 
     dir: Vec2 = null;
 
-    bindingStart(event: EventTouch) {}
-    bindingMove(event: EventTouch) {}
-    bindingEnd(event: EventTouch) {}
+    bindingStart() {}
+    bindingMove() {}
+    bindingEnd() {}
     bindingUpdate() {}
 
-    fisrtTap() {
-        if(this.isFirtMove) {
-            this.isFirtMove = false;
-            sm.playBgMusic();
-            ui.firstMove();
-        }
-    }
-
-    isFirtMove: boolean = true;
     onTouchStart(event: EventTouch) {
-        this.fisrtTap();
-        this.bindingStart(event);
+        this.startPos = event.getUILocation();
+        this.bindingStart();
     }
 
     onTouchMove(event: EventTouch) {
-        this.bindingMove(event);
+        // console.log('move');
+        
+        let touch = event.touch;
+        let pos = touch.getUILocation();
+        this.dir = pos.clone().subtract(this.startPos);
+        let len = misc.clampf(this.dir.length(), 0, 5);
+        // let r = 80;
+        // this.dir = this.dir.normalize().multiplyScalar(len);
+        this.bindingMove();
+        this.startPos = pos;
+        this.dir = null;
     }
 
     onTouchEnd(event: EventTouch) {
-        this.bindingEnd(event);
+        this.bindingEnd();
+        this.startPos = null;
+        this.dir = null;
     }
 
     binding() {
         input.on(Input.EventType.TOUCH_START, this.onTouchStart, this);
         input.on(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
         input.on(Input.EventType.TOUCH_END, this.onTouchEnd, this);
-        input.on(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
-    }
-
-    offBinding() {
-        input.off(Input.EventType.TOUCH_START, this.onTouchStart, this);
-        input.off(Input.EventType.TOUCH_MOVE, this.onTouchMove, this);
-        input.off(Input.EventType.TOUCH_END, this.onTouchEnd, this);
-        input.off(Input.EventType.TOUCH_CANCEL, this.onTouchEnd, this);
     }
 
     start() {

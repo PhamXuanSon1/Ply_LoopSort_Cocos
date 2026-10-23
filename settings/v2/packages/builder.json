@@ -1,27 +1,27 @@
 {
-  "__version__": "1.3.5",
+  "__version__": "1.3.9",
   "splash-setting": {
     "totalTime": 500,
     "logo": {
-      "image": "project://settings/gggg.png",
+      "image": "project://settings/Logo.png",
       "type": "custom"
     },
     "background": {
       "type": "color",
       "color": {
         "x": 1,
-        "y": 0.8392156862745098,
-        "z": 0.49411764705882355,
+        "y": 0.8745098039215686,
+        "z": 0.6078431372549019,
         "w": 1
-      }
+      },
+      "image": "project://settings/download.png"
     },
-    "url": "project://settings/splash.png",
     "displayRatio": 1
   },
   "textureCompressConfig": {
     "userPreset": {
       "03/m4ybQVOJ7SPOhieTjrl": {
-        "name": "SingleHTML",
+        "name": "PNG80",
         "options": {
           "web": {
             "png": {
@@ -29,7 +29,8 @@
             }
           }
         }
-      }
+      },
+      "ccomDNGMFLnbX2Oq242qpY": null
     }
   }
 }

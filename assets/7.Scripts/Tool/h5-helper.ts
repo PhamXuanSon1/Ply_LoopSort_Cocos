@@ -33,6 +33,10 @@ class H5Playable {
     //@ts-ignore
     if (typeof setStoreUrl !== "undefined") setStoreUrl(iosUrl, androidUrl);
   }
+  handleVolumeChange(funct : Function) {
+    //@ts-ignore
+    if (typeof handleVolumeChange !== "undefined") handleVolumeChange = funct;
+  }
 }
 
 const playableHelper = new H5Playable();
