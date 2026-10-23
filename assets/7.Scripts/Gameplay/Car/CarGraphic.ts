@@ -9,6 +9,9 @@
  *   nằm trên cùng, được ẩn khi khối đang bay ra / vào và vẽ lại khi anim xong (`updateOutline()`).
  * - Hàm: `refresh(colors, capacity)` vẽ lại hàng, `slotOut(i)` khối trượt ra phía đuôi xe rồi biến mất,
  *   `slotIn(i)` khối bật vào từ phía đuôi xe, `closeCover(done)` kéo mái che từ đầu xe ra đuôi (mask),
+ *   `slotShrink(i, frac)` khối co dần từ phía đuôi khi vỡ thành cục, `slotPartial(i, frac)` khối lớn dần theo từng hàng cục
+ *   đã ghép (giữ nguyên qua refresh), `slotShow(i)` khối hiện liền khi cục đã xếp đủ,
+ *   `cellWorld(...)` / `exitWorld()` vị trí ô lưới cục và cửa sau thùng xe (băng chuyền dùng),
  *   `punch()` nảy nhẹ thân xe (hiện không dùng: thân xe đứng yên khi nhận khối), `showCheck()` hiện dấu tick, `hitTest()` kiểm tra điểm chạm có trúng xe không.
  */
 import { _decorator, CCObject, Component, Mask, Node, Sprite, Tween, tween, UITransform, v3, Vec2, Vec3 } from 'cc';
@@ -78,6 +81,8 @@ export class CarGraphic extends Component {
     closed: boolean = false;
     // Ô đã được giữ chỗ cho khối đang trên đường tới (chưa hiện cho tới khi slotIn)
     pending: Set<number> = new Set();
+    // Ô đang được ghép dần từ các cục (băng chuyền): phần đã hiện, tính từ đầu xe (0..1)
+    partial: Map<number, number> = new Map();
     previewKey: string = '';
 
     // =========================================================================
@@ -176,6 +181,8 @@ export class CarGraphic extends Component {
             sprite.node.active = !!frame && !this.pending.has(i);
             if (frame) sprite.spriteFrame = frame;
         });
+        // Ô đang ghép dần vẫn giữ phần đã ghép (refresh do xe khác giữ chỗ không được làm mất)
+        this.partial.forEach((_, i) => this.applyPartial(i));
         this.updateOutline();
     }
 
@@ -263,6 +270,77 @@ export class CarGraphic extends Component {
                 this.updateOutline();
                 done && done();
             })
+            .start();
+    }
+
+    // ---------- Khối vỡ thành lưới cục nhỏ (băng chuyền dùng) ----------
+
+    // Vị trí thế giới của ô lưới (a, r) trong ô hàng i: a = 0 sát đầu xe ... nAlong-1 sát đuôi xe, r chạy ngang thùng xe.
+    // Tính theo vị trí gốc của ô nên không bị lệch khi ô đang co / đang anim
+    cellWorld(i: number, a: number, r: number, nAlong: number, nAcross: number): Vec3 {
+        let home = this.homes[i];
+        let size = this.slots[i].getComponent(UITransform).contentSize;
+        let x = home.x + this.rearDir * (-size.width / 2 + (a + 0.5) * size.width / nAlong);
+        let y = home.y - size.height / 2 + (r + 0.5) * size.height / nAcross;
+        return this.cargoRoot.getComponent(UITransform).convertToWorldSpaceAR(v3(x, y, 0));
+    }
+
+    // Cửa sau thùng xe (chỗ cục chui ra / chui vào), theo tọa độ thế giới
+    exitWorld(): Vec3 {
+        return this.cargoRoot.getComponent(UITransform).convertToWorldSpaceAR(v3((this.bedRearX + 25) * this.rearDir, this.bedY, 0));
+    }
+
+    // Khối ở ô i co lại từ phía đuôi xe, chỉ còn phần `frac` (0..1) sát đầu xe; 0 thì tắt hẳn
+    slotShrink(i: number, frac: number) {
+        let node = this.slots[i]?.node;
+        if (!node) return;
+        this.hideOutline();
+        this.resetSlot(i);
+        if (frac <= 0) {
+            node.active = false;
+            return;
+        }
+        let home = this.homes[i];
+        let w = this.slots[i].getComponent(UITransform).width;
+        node.setScale(frac, 1, 1);
+        node.setPosition(home.x - this.rearDir * (1 - frac) * w / 2, home.y, home.z);
+    }
+
+    // Khối ở ô i đang được ghép dần: chỉ hiện phần `frac` (0..1) sát đầu xe, nảy nhẹ mỗi lần lớn thêm một hàng
+    slotPartial(i: number, frac: number) {
+        this.partial.set(i, frac);
+        this.applyPartial(i, true);
+    }
+
+    applyPartial(i: number, pop: boolean = false) {
+        let node = this.slots[i]?.node;
+        let frac = this.partial.get(i);
+        if (!node || frac === undefined) return;
+        this.hideOutline();
+        this.resetSlot(i);
+        let home = this.homes[i];
+        let w = this.slots[i].getComponent(UITransform).width;
+        node.active = true;
+        node.setPosition(home.x - this.rearDir * (1 - frac) * w / 2, home.y, home.z);
+        node.setScale(frac, 1, 1);
+        if (pop) {
+            node.setScale(frac, 1.08, 1);
+            tween(node).to(0.12, { scale: v3(frac, 1, 1) }, { easing: 'quadOut' }).start();
+        }
+    }
+
+    // Khối ở ô i hiện ra liền một khối tại chỗ (sau khi các cục đã xếp đủ), nảy nhẹ
+    slotShow(i: number) {
+        this.pending.delete(i);
+        this.partial.delete(i);
+        let node = this.slots[i]?.node;
+        if (!node) return;
+        this.resetSlot(i);
+        node.active = true;
+        node.setScale(1.06, 1.06, 1);
+        tween(node)
+            .to(0.12, { scale: v3(1, 1, 1) }, { easing: 'quadOut' })
+            .call(() => this.updateOutline())
             .start();
     }
 
