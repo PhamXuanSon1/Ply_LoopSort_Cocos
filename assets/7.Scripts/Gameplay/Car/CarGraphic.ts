@@ -5,10 +5,13 @@
  *   Khi `capacity` hoặc thông số thùng xe đổi, các ô được dàn đều lại từ `bedCabX` (sát đầu xe) tới `bedRearX`
  *   (đuôi xe); ngoài lúc đó, vị trí/kích thước bạn chỉnh tay trên từng ô được giữ nguyên.
  * - Ô thừa (khi giảm capacity) chỉ bị tắt chứ không xoá, vì không xoá được node con của prefab trong instance.
- * - Hàm: `refresh(colors, capacity)` vẽ lại hàng, `closeCover(done)` kéo mái che từ đầu xe ra đuôi (mask), `punch()` nảy nhẹ khi nhận khối,
- *   `showCheck()` hiện dấu tick, `hitTest()` kiểm tra điểm chạm có trúng xe không.
+ * - Ảnh khối không có viền; viền đen là node `Body/Cargo/Outline` (9-slice) chỉ bao quanh nhóm khối cùng màu
+ *   nằm trên cùng, được ẩn khi khối đang bay ra / vào và vẽ lại khi anim xong (`updateOutline()`).
+ * - Hàm: `refresh(colors, capacity)` vẽ lại hàng, `slotOut(i)` khối trượt ra phía đuôi xe rồi biến mất,
+ *   `slotIn(i)` khối bật vào từ phía đuôi xe, `closeCover(done)` kéo mái che từ đầu xe ra đuôi (mask),
+ *   `punch()` nảy nhẹ thân xe, `showCheck()` hiện dấu tick, `hitTest()` kiểm tra điểm chạm có trúng xe không.
  */
-import { _decorator, CCObject, Component, Mask, Node, Sprite, tween, UITransform, v3, Vec2 } from 'cc';
+import { _decorator, CCObject, Component, Mask, Node, Sprite, Tween, tween, UITransform, v3, Vec2, Vec3 } from 'cc';
 import { EDITOR } from 'cc/env';
 import { ColorType } from '../Data';
 import { CarSkin } from './CarSkin';
@@ -37,6 +40,10 @@ export class CarGraphic extends Component {
     slotHeight: number = 174;
     @property({ tooltip: 'Thời gian (giây) kéo mái che phủ kín thùng xe' })
     coverDuration: number = 0.45;
+    @property({ tooltip: 'Thời gian (giây) một khối trượt ra / bật vào thùng xe' })
+    slotAnimDuration: number = 0.18;
+    @property({ tooltip: 'Quãng đường (pixel) khối trượt về phía đuôi xe khi ra / vào' })
+    slotAnimDistance: number = 70;
 
     // Thông số của lần dàn ô gần nhất; chỉ dàn lại khi thông số này thay đổi
     @property({ visible: false })
@@ -44,6 +51,14 @@ export class CarGraphic extends Component {
 
     skin: CarSkin = null!;
     slots: Sprite[] = [];
+    // Mảng màu của xe (cùng tham chiếu với CarController.colors) để vẽ lại viền khi khối ra / vào
+    colors: ColorType[] = [];
+    // Vị trí gốc của từng ô (để trả ô về chỗ sau khi chạy anim)
+    homes: Vec3[] = [];
+    // Mái che đã đóng (xe hoàn thành): không vẽ viền nữa
+    closed: boolean = false;
+    // Ô đã được giữ chỗ cho khối đang trên đường tới (chưa hiện cho tới khi slotIn)
+    pending: Set<number> = new Set();
     previewKey: string = '';
 
     onLoad() {
@@ -96,7 +111,12 @@ export class CarGraphic extends Component {
             }
             this.slots.push(node.getComponent(Sprite));
         }
-        if (!relayout) return;
+        if (relayout) this.layout(capacity, key);
+        this.homes = this.slots.map(s => s.node.position.clone());
+    }
+
+    // Dàn đều các ô từ mép thùng sát đầu xe tới mép thùng ở đuôi xe
+    layout(capacity: number, key: string) {
         this.layoutKey = key;
         let sign = this.cabOnLeft ? 1 : -1;
         let cab = this.bedCabX * sign, rear = this.bedRearX * sign;
@@ -110,17 +130,129 @@ export class CarGraphic extends Component {
 
     refresh(colors: ColorType[], capacity: number) {
         if (!this.skin) return;
+        this.colors = colors;
+        this.closed = false;
         this.build(capacity);
         this.body.spriteFrame = this.skin.emptyFrame;
         this.slots.forEach((sprite, i) => {
             let frame = i < colors.length ? this.skin.getUnit(colors[i]) : null;
-            sprite.node.active = !!frame;
+            if (!EDITOR) this.resetSlot(i);
+            sprite.node.active = !!frame && !this.pending.has(i);
             if (frame) sprite.spriteFrame = frame;
         });
+        this.updateOutline();
+    }
+
+    // Node viền đen Body/Cargo/Outline, luôn vẽ trên các ô hàng; tạo mới nếu chưa có
+    get outline(): Sprite {
+        let root = this.cargoRoot;
+        let node = root.getChildByName('Outline');
+        if (!node) {
+            node = new Node('Outline');
+            node.layer = root.layer;
+            node.parent = root;
+            node.addComponent(UITransform);
+            let s = node.addComponent(Sprite);
+            s.type = Sprite.Type.SLICED;
+            s.sizeMode = Sprite.SizeMode.CUSTOM;
+            s.trim = false;
+        }
+        node.setSiblingIndex(root.children.length - 1);
+        return node.getComponent(Sprite);
+    }
+
+    hideOutline() {
+        let node = this.cargoRoot.getChildByName('Outline');
+        if (node) node.active = false;
+    }
+
+    // Viền đen chỉ bao quanh nhóm khối cùng màu nằm trên cùng (nhóm sẽ dỡ ra khi chạm), các khối khác không có viền
+    updateOutline() {
+        let colors = this.colors;
+        if (this.closed || this.pending.size > 0 || !this.skin?.outlineFrame || colors.length == 0 || colors.length > this.slots.length) {
+            this.hideOutline();
+            return;
+        }
+        let top = colors.length - 1, from = top;
+        while (from > 0 && colors[from - 1] == colors[top]) from--;
+        let min = Infinity, max = -Infinity, y = 0, height = 0;
+        for (let i = from; i <= top; i++) {
+            let size = this.slots[i].getComponent(UITransform).contentSize;
+            let home = this.homes[i];
+            min = Math.min(min, home.x - size.width / 2);
+            max = Math.max(max, home.x + size.width / 2);
+            y = home.y;
+            height = size.height;
+        }
+        let sprite = this.outline;
+        sprite.spriteFrame = this.skin.outlineFrame;
+        sprite.node.active = true;
+        sprite.node.setPosition((min + max) / 2, y, 0);
+        sprite.getComponent(UITransform).setContentSize(max - min, height);
+    }
+
+    // Hướng từ đầu xe ra đuôi xe trên trục X (+1 khi đầu xe bên trái)
+    get rearDir(): number {
+        return this.cabOnLeft ? 1 : -1;
+    }
+
+    resetSlot(i: number) {
+        let node = this.slots[i]?.node;
+        if (!node || !this.homes[i]) return;
+        Tween.stopAllByTarget(node);
+        node.setPosition(this.homes[i]);
+        node.setScale(1, 1, 1);
+    }
+
+    // Khối ở ô i trượt ra phía đuôi xe (về phía băng chuyền), thu nhỏ rồi tắt
+    slotOut(i: number, done?: () => void) {
+        let node = this.slots[i]?.node;
+        if (!node) { done && done(); return; }
+        this.resetSlot(i);
+        this.hideOutline();
+        let home = this.homes[i];
+        tween(node)
+            .to(this.slotAnimDuration, { position: v3(home.x + this.rearDir * this.slotAnimDistance, home.y, home.z), scale: v3(0.4, 0.4, 1) }, { easing: 'quadIn' })
+            .call(() => {
+                node.active = false;
+                this.resetSlot(i);
+                this.updateOutline();
+                done && done();
+            })
+            .start();
+    }
+
+    // Giữ chỗ ô i cho khối đang tới: ô bị ẩn cho tới khi slotIn(i)
+    reserve(i: number) {
+        this.pending.add(i);
+        let node = this.slots[i]?.node;
+        if (node) node.active = false;
+        this.hideOutline();
+    }
+
+    // Khối ở ô i bật vào từ phía đuôi xe rồi nảy nhẹ khi vào chỗ
+    slotIn(i: number) {
+        this.pending.delete(i);
+        let node = this.slots[i]?.node;
+        if (!node) return;
+        this.resetSlot(i);
+        let home = this.homes[i];
+        node.active = true;
+        node.setPosition(home.x + this.rearDir * this.slotAnimDistance, home.y, home.z);
+        node.setScale(0.4, 0.4, 1);
+        this.hideOutline();
+        tween(node)
+            .to(this.slotAnimDuration, { position: home, scale: v3(1.12, 1.12, 1) }, { easing: 'quadOut' })
+            .to(0.1, { scale: v3(1, 1, 1) }, { easing: 'backOut' })
+            .call(() => this.updateOutline())
+            .start();
     }
 
     // Mái che trượt trên thùng xe từ đầu tới đuôi: sprite xe đóng nắp dần lộ ra qua mask mở rộng
     closeCover(done?: () => void) {
+        // Chặn mọi lần vẽ lại viền còn chờ (vd. anim slotIn của khối cuối) để viền không hiện đè lên mái
+        this.closed = true;
+        this.hideOutline();
         let size = this.body.getComponent(UITransform).contentSize;
         let fromLeft = this.cabOnLeft;
         let mask = new Node('CoverMask');
@@ -187,7 +319,7 @@ export class CarGraphic extends Component {
         let car: any = this.getComponent('CarController');
         if (!car || !this.body) return;
         if (!this.skin) this.onLoad();
-        let key = JSON.stringify(car.colors) + this.getLayoutKey(car.capacity);
+        let key = JSON.stringify(car.colors) + this.getLayoutKey(car.capacity) + (this.skin?.outlineFrame?.uuid || '');
         if (key == this.previewKey) return;
         this.previewKey = key;
         this.refresh(car.colors, car.capacity);
