@@ -392,7 +392,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 118.5,
+      "width": 119.5,
       "height": 174
     },
     "_anchorPoint": {
@@ -528,7 +528,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 118.5,
+      "width": 119.5,
       "height": 174
     },
     "_anchorPoint": {
@@ -664,7 +664,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 118.5,
+      "width": 119.5,
       "height": 174
     },
     "_anchorPoint": {
@@ -800,7 +800,7 @@
     },
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 118.5,
+      "width": 119.5,
       "height": 174
     },
     "_anchorPoint": {
@@ -1184,10 +1184,12 @@
     "bedCabX": -205,
     "bedRearX": 273,
     "bedY": 44,
-    "gap": 1,
+    "gap": 0,
     "slotHeight": 174,
     "coverDuration": 1,
-    "layoutKey": "[4,true,-205,273,44,1,174]",
+    "slotAnimDuration": 0.18,
+    "slotAnimDistance": 70,
+    "layoutKey": "[4,true,-205,273,44,0,174]",
     "_id": ""
   },
   {
@@ -1207,6 +1209,8 @@
       "__id__": 53
     },
     "facing": -1,
+    "backDistance": 30,
+    "backDuration": 0.15,
     "driveDistance": 1600,
     "driveDuration": 0.7,
     "_id": ""
@@ -1302,7 +1306,11 @@
         "__id__": 70
       }
     ],
-    "_id": ""
+    "_id": "",
+    "outlineFrame": {
+      "__uuid__": "6880384e-9c1b-4c46-a412-7ae7ca9eb534@f9941",
+      "__expectedType__": "cc.SpriteFrame"
+    }
   },
   {
     "__type__": "cc.CompPrefabInfo",
@@ -1421,6 +1429,7 @@
       "__id__": 0
     },
     "fileId": "86AUVz4ZFFq6p6xkdZyq/v",
-    "instance": null
+    "instance": null,
+    "targetOverrides": null
   }
 ]
